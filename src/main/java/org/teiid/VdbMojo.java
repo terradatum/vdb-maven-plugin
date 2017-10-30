@@ -21,6 +21,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.util.ArrayList;
 
 import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.ArchiveException;
@@ -78,6 +79,28 @@ public class VdbMojo extends AbstractMojo {
                 this.addFile(archive, "META-INF/vdb.xml", vdb);
             } else {
                 throw new MojoExecutionException("No VDB File found in directory" + this.vdbFolder);
+            }
+
+            // add config, classes, lib and META-INF directories
+            File f = new File(this.vdbFolder);
+            if (f.exists() && f.isDirectory()) {
+                File[] list = f.listFiles();
+                ArrayList<File> directories = new ArrayList<>();
+                for (File l : list) {
+                    if (l.isDirectory()) {
+                        directories.add(l);
+                    }
+                    if (!l.getName().endsWith("-vdb.xml")) {
+                        directories.add(l);
+                    }
+                }
+                add(archive, "", directories.toArray(new File[directories.size()]));
+            }
+
+            // add class files.
+            f = new File(outputDirectory, "classes");
+            if (f.exists()) {
+                add(archive, "", f.listFiles());
             }
         } catch (Exception e) {
             throw new MojoExecutionException("Exception when creating artifact archive.", e);
