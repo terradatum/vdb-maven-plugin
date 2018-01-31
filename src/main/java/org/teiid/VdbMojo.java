@@ -38,8 +38,8 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
 /**
- * @see https://stackoverflow.com/questions/1427722/how-do-i-create-a-new-packaging-type-for-maven
- * @see http://softwaredistilled.blogspot.com/2015/07/how-to-create-custom-maven-packaging.html
+ * https://stackoverflow.com/questions/1427722/how-do-i-create-a-new-packaging-type-for-maven
+ * http://softwaredistilled.blogspot.com/2015/07/how-to-create-custom-maven-packaging.html
  */
 @Mojo(name = "vdb")
 public class VdbMojo extends AbstractMojo {
@@ -60,9 +60,8 @@ public class VdbMojo extends AbstractMojo {
     @Parameter(property = "project.build.finalName", readonly = true)
     private String finalName;
 
-    /**
-     * A list of folders or files to be included in the final artifact archive.
-     */
+    
+     //A list of folders or files to be included in the final artifact archive.
     @Parameter
     private File[] includes;
 
