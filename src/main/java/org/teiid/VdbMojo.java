@@ -155,6 +155,10 @@ public class VdbMojo extends AbstractMojo {
     }
 
     protected ArchiveOutputStream getStream(File artifact) throws IOException {
+        File outdir = new File(outputDirectory);
+        if (!outdir.exists()) {
+            outdir.mkdirs();
+        }
         FileOutputStream output = new FileOutputStream(artifact);
         try {
             return new ArchiveStreamFactory().createArchiveOutputStream(ArchiveStreamFactory.ZIP, output);
