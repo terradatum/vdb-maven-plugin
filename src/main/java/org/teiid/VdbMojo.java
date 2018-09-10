@@ -21,7 +21,10 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.ArchiveException;
@@ -29,6 +32,7 @@ import org.apache.commons.compress.archivers.ArchiveOutputStream;
 import org.apache.commons.compress.archivers.ArchiveStreamFactory;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.io.IOUtils;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -36,6 +40,9 @@ import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.teiid.adminapi.impl.VDBImportMetadata;
+import org.teiid.adminapi.impl.VDBMetaData;
+import org.teiid.adminapi.impl.VDBMetadataParser;
 
 /**
  * https://stackoverflow.com/questions/1427722/how-do-i-create-a-new-packaging-type-for-maven
@@ -74,36 +81,108 @@ public class VdbMojo extends AbstractMojo {
 
         try (ArchiveOutputStream archive = this.getStream(artifact)) {
             File vdb = this.getVDBFile();
-            if (vdb != null) {
-                this.addFile(archive, "META-INF/vdb.xml", vdb);
-            } else {
+            if (vdb == null) {
                 throw new MojoExecutionException("No VDB File found in directory" + this.vdbFolder);
             }
 
             // add config, classes, lib and META-INF directories
             File f = new File(this.vdbFolder);
-            if (f.exists() && f.isDirectory()) {
-                File[] list = f.listFiles();
-                ArrayList<File> directories = new ArrayList<>();
-                for (File l : list) {
-                    if (l.isDirectory()) {
-                        directories.add(l);
+            Set<File> directories = new LinkedHashSet<>();
+            gatherContents(f, directories);
+
+            // check if the VDB has any vdb imports, if yes, then check the dependencies
+            VDBMetaData top = VDBMetadataParser.unmarshell(new FileInputStream(vdb));
+            if (!top.getVDBImports().isEmpty()) {
+                // read import vdbs
+                Set<Artifact> dependencies = project.getDependencyArtifacts();
+                for (Artifact d : dependencies) {
+
+                    if (!d.getFile().getName().endsWith(".vdb")) {
+                        continue;
                     }
-                    if (!l.getName().endsWith("-vdb.xml")) {
-                        directories.add(l);
+
+                    File vdbDir = unzipContents(d);
+                    File childFile = new File(vdbDir, "META-INF/vdb.xml");
+                    System.out.println("Merging VDB " + childFile.getCanonicalPath());
+                    VDBMetaData child = VDBMetadataParser.unmarshell(new FileInputStream(childFile));
+
+                    if (!child.getVDBImports().isEmpty()) {
+                        throw new MojoExecutionException("Nested VDB imports are not supported" + d.getArtifactId());
+                    }
+
+                    VDBImportMetadata matched = null;
+                    for (VDBImportMetadata importee : top.getVDBImports()) {
+                        if (child.getName().equals(importee.getName())
+                                && child.getVersion().equals(importee.getVersion())) {
+
+                            gatherContents(vdbDir, directories);
+
+                            child.getModelMetaDatas().forEach((k,v) -> top.addModel(v));
+                            child.getOverrideTranslatorsMap().forEach((k,v) -> top.addOverideTranslator(v));
+
+                            if (importee.isImportDataPolicies()) {
+                                child.getDataPolicyMap().forEach((k,v) -> top.addDataPolicy(v));
+                            }
+                            matched = importee;
+                            break;
+                        }
+                    }
+                    if (matched != null) {
+                        top.getVDBImports().remove(matched);
                     }
                 }
-                add(archive, "", directories.toArray(new File[directories.size()]));
             }
+            add(archive, "", directories.toArray(new File[directories.size()]));
 
-            // add class files.
-            f = new File(outputDirectory, "classes");
-            if (f.exists()) {
-                add(archive, "", f.listFiles());
-            }
+            File finalVDB = new File("target", "vdb.xml");
+            VDBMetadataParser.marshell(top, new FileOutputStream(finalVDB));
+            addFile(archive, "META-INF/vdb.xml", finalVDB);
+
         } catch (Exception e) {
             throw new MojoExecutionException("Exception when creating artifact archive.", e);
         }
+    }
+
+    private void gatherContents(File f, Set<File> directories) {
+        if (f.exists() && f.isDirectory()) {
+            File[] list = f.listFiles();
+
+            for (File l : list) {
+                if (l.isDirectory()) {
+                    directories.add(l);
+                }
+                if (!l.getName().endsWith("vdb.xml")) {
+                    directories.add(l);
+                }
+            }
+        }
+    }
+
+    private File unzipContents(Artifact d) throws FileNotFoundException, IOException {
+        File f = new File("target", d.getArtifactId());
+        f.mkdirs();
+        System.out.println("unzipping " + d.getArtifactId() + " to directory "+ f.getCanonicalPath());
+
+        byte[] buffer = new byte[1024];
+        ZipInputStream zis = new ZipInputStream(new FileInputStream(d.getFile()));
+        ZipEntry ze = zis.getNextEntry();
+        while (ze != null) {
+            String fileName = ze.getName();
+            System.out.println("\t" + fileName);
+            File newFile = new File(f, fileName);
+            new File(newFile.getParent()).mkdirs();
+            FileOutputStream fos = new FileOutputStream(newFile);
+            int len;
+            while ((len = zis.read(buffer)) > 0) {
+                fos.write(buffer, 0, len);
+            }
+            fos.close();
+
+            zis.closeEntry();
+            ze = zis.getNextEntry();
+        }
+        zis.close();
+        return f;
     }
 
     private File getVDBFile() {
@@ -130,7 +209,7 @@ public class VdbMojo extends AbstractMojo {
     }
 
     private void addFile(ArchiveOutputStream archive, String name, File file) throws IOException {
-        System.out.println("Adding file = " + name);
+        System.out.println("Adding file = " + name +" from " + file.getCanonicalPath());
         ArchiveEntry entry = this.entry(file, name);
         archive.putArchiveEntry(entry);
         IOUtils.copy(new FileInputStream(file), archive);
@@ -146,10 +225,9 @@ public class VdbMojo extends AbstractMojo {
             if (file.isDirectory()) {
                 this.add(archive, name + SLASH, file.listFiles());
             } else {
-                ArchiveEntry entry = this.entry(file, name);
-                archive.putArchiveEntry(entry);
-                IOUtils.copy(new FileInputStream(file), archive);
-                archive.closeArchiveEntry();
+                if (!name.endsWith("vdb.xml")) {
+                    addFile(archive, name, file);
+                }
             }
         }
     }
