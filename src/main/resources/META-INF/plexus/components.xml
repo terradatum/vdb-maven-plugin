@@ -12,6 +12,7 @@
             <lifecycle>
                <id>default</id>
                <phases>
+                <!-- 
                  <process-resources>
                    org.apache.maven.plugins:maven-resources-plugin:resources
                  </process-resources>
@@ -27,6 +28,7 @@
                  <test>
                    org.apache.maven.plugins:maven-surefire-plugin:test
                  </test>
+                  -->
                  <package>
                    org.teiid:vdb-maven-plugin:vdb
                  </package>
