@@ -40,6 +40,8 @@ import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.teiid.adminapi.DataPolicy;
+import org.teiid.adminapi.impl.DataPolicyMetadata;
 import org.teiid.adminapi.impl.VDBImportMetadata;
 import org.teiid.adminapi.impl.VDBMetaData;
 import org.teiid.adminapi.impl.VDBMetadataParser;
@@ -90,6 +92,12 @@ public class VdbMojo extends AbstractMojo {
             Set<File> directories = new LinkedHashSet<>();
             gatherContents(f, directories);
 
+            // do not allow vdb-import in the case of VDB represented with .ddl
+            if (vdb.getName().endsWith("-vdb.ddl")) {
+            	addFile(archive, "META-INF/vdb.ddl", vdb);
+            	return;
+            }
+
             // check if the VDB has any vdb imports, if yes, then check the dependencies
             VDBMetaData top = VDBMetadataParser.unmarshell(new FileInputStream(vdb));
             if (!top.getVDBImports().isEmpty()) {
@@ -117,12 +125,31 @@ public class VdbMojo extends AbstractMojo {
 
                             gatherContents(vdbDir, directories);
 
-                            child.getModelMetaDatas().forEach((k,v) -> top.addModel(v));
+                            top.getVisibilityOverrides().putAll(child.getVisibilityOverrides());
+							child.getModelMetaDatas().forEach((k, v) -> {
+								top.addModel(v);
+								String visibilityOverride = top.getPropertyValue(v.getName() + ".visible"); //$NON-NLS-1$
+								if (visibilityOverride != null) {
+									boolean visible = Boolean.valueOf(visibilityOverride);
+									top.setVisibilityOverride(v.getName(), visible);
+								}
+							});
+
                             child.getOverrideTranslatorsMap().forEach((k,v) -> top.addOverideTranslator(v));
 
-                            if (importee.isImportDataPolicies()) {
-                                child.getDataPolicyMap().forEach((k,v) -> top.addDataPolicy(v));
-                            }
+                			if (importee.isImportDataPolicies()) {
+                				for (DataPolicy dp : child.getDataPolicies()) {
+                					DataPolicyMetadata role = (DataPolicyMetadata)dp;
+                					if (top.addDataPolicy(role) != null) {
+										throw new MojoExecutionException(top.getName() + "." + top.getVersion()
+												+ " imports a conflicting role " + role.getName() + " from "
+												+ child.getName() + "." + child.getVersion());
+                					}
+                					if (role.isGrantAll()) {
+                						role.setSchemas(child.getModelMetaDatas().keySet());
+                					}
+                				}
+                			}
                             matched = importee;
                             break;
                         }
@@ -196,7 +223,7 @@ public class VdbMojo extends AbstractMojo {
                 File[] list = f.listFiles(new FilenameFilter() {
                     @Override
                     public boolean accept(File dir, String name) {
-                        return name.endsWith("-vdb.xml");
+                        return name.endsWith("-vdb.xml") || name.endsWith("-vdb.ddl");
                     }
                 });
                 if (list.length != 0) {
