@@ -79,6 +79,9 @@ public class VdbMojo extends AbstractMojo {
     @Parameter
     private File[] includes;
 
+    @Parameter(defaultValue = "${project.build.outputDirectory}", required = true)
+    private File classesDirectory;
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
 
@@ -99,6 +102,7 @@ public class VdbMojo extends AbstractMojo {
 
                 // add config, classes, lib and META-INF directories
                 Set<File> directories = new LinkedHashSet<>();
+                gatherContents(this.classesDirectory, directories);
                 gatherContents(this.vdbFolder, directories);
 
                 // do not allow vdb-import in the case of VDB represented with .ddl
@@ -168,7 +172,7 @@ public class VdbMojo extends AbstractMojo {
                         }
                     }
                 }
-                add(archive, "", directories.toArray(new File[directories.size()]));
+                add(archive, "", directories.toArray(new File[0]));
 
                 File finalVDB = new File(this.outputDirectory.getPath(), "vdb.xml");
                 finalVDB.getParentFile().mkdirs();
