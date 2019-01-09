@@ -1,4 +1,4 @@
- <?xml version="1.0"?>
+<?xml version="1.0"?>
 <component-set>
   <components>
     <component>
@@ -12,11 +12,10 @@
             <lifecycle>
                <id>default</id>
                <phases>
-                <!-- 
                  <process-resources>
                    org.apache.maven.plugins:maven-resources-plugin:resources
                  </process-resources>
-                 <compile>
+<!--                 <compile>
                     org.apache.maven.plugins:maven-compiler-plugin:compile
                  </compile>
                  <process-test-resources>
@@ -27,8 +26,7 @@
                  </test-compile>
                  <test>
                    org.apache.maven.plugins:maven-surefire-plugin:test
-                 </test>
-                  -->
+                 </test>-->
                  <package>
                    org.teiid:vdb-maven-plugin:vdb
                  </package>
